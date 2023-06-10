@@ -1,0 +1,11 @@
+{
+    "params": {
+        "local_server": "True",
+        "local_url": "mysql://root:@localhost/memerkidaV2",
+        "prod_url": "mysql://root:@localhost/memerkidaV2",
+
+        "address": "Yavatmal, MH, 445001"
+
+
+    }
+}

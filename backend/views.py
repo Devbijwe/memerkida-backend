@@ -3,69 +3,94 @@
 import os
 import json
 import uuid
-from flask import Flask,Blueprint,render_template,session,redirect,send_file, request,flash,jsonify,Response,url_for,make_response
+from flask import Flask,Blueprint,render_template,session,redirect,send_file, request,flash,jsonify,Response,url_for,make_response,abort
 from datetime import datetime
 from main import app, db
 from models import *
 from datetime import datetime
 from functools import wraps
+from sqlalchemy import or_,func
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 
+
+import Endpoints.Orders
 from helper import *
-from endpoints.auth import auth_bp
-from endpoints.address import address_bp
-from endpoints.user import user_bp
-from endpoints.tshirt import tshirt_bp
-from endpoints.Admin import admin_bp
+from Endpoints.auth import auth_bp
+from Endpoints.address import address_bp
+from Endpoints.user import user_bp
+from Endpoints.tshirt import tshirt_bp
+from Endpoints.Admin import admin_bp
+from Endpoints.cart import cart_bp
 
 app.register_blueprint(admin_bp, url_prefix='/api/admin')
 app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(address_bp, url_prefix='/api/address')
 app.register_blueprint(user_bp, url_prefix='/api/user')
-app.register_blueprint(tshirt_bp, url_prefix='/api/tshirt')
-
+app.register_blueprint(tshirt_bp, url_prefix='/api/tshirts')
+app.register_blueprint(cart_bp, url_prefix='/api/carts')
 
 with open("config.json","r") as c:
     params=json.load(c)['params']
     
-from MLModels.relatedTShirts import get_related_tshirts
+
+
+@app.route('/api/files/<fileId>', methods=['GET'])
+def get_file(fileId):
+    file_entry = Files.query.get(fileId)
+
+    if file_entry is None:
+        return jsonify({"error": "File could not be found"}), 400
+        # abort(404)
+
+    try:
+        return send_file(file_entry.filepath, mimetype=file_entry.fileType, as_attachment=False)
+    except Exception as e:
+        abort(500)
+
 # from MLModels.imgPrediction import predict_image
 @app.route("/",methods=["GET","POST"])
 # @login_required
 def home():
-    return  jsonify({"message": "You have successfully access this endpoint"}), 200
-
-
-# @app.route("/get_related_tshirts/<string:tshirtId>",methods=["GET","POST"])
-# def get_t_rel(tshirtId):# Example usage:
-#     target_tshirt_id = tshirtId
-#     top_n=10
-#     related_tshirts = get_related_tshirts(target_tshirt_id,top_n)
-#     for tshirt_id, score in related_tshirts:
+    Arr=[]
+    tshirts=TShirts.query.all()
+    for tshirt in tshirts:
+        Arr.append(tshirt.toDict())
         
-#         print(f"T-Shirt ID: {tshirt_id}, Similarity Score: {score}")
-#     return jsonify({}),200
+    return  jsonify({"message": "You have successfully access this endpoint","tshirts":Arr}), 200
+
+# from MLModels.imgPrediction import predict_image
+@app.route("/api/get/data/category")
+# @login_required
+def getCat():
+    cat=TShirts.get_unique_categories()
+    return  jsonify({"message": "You have successfully access this endpoint","category":cat}), 200
+
+@app.route("/api/get/data/tshirts")
+# @login_required
+# @ip_rate_limit(limit=10, per=timedelta(days=1))
+def get_tshirts():
+    gender = request.args.get('gender')
+    category = request.args.get('category')
+
+    if gender is None and category is None:
+        # Query all t-shirts limited to 24 items
+        tshirts = TShirts.query.limit(24).all()
+    else:
+        # Query t-shirts based on the provided gender or category (case-insensitive)
+        tshirts = TShirts.query.filter(
+            or_(func.lower(TShirts.gender) == func.lower(gender), func.lower(TShirts.category) == func.lower(category))
+        ).all()
+
+    # Convert t-shirts to dictionary representation
+    tshirts_dict = [tshirt.toDict() for tshirt in tshirts]
+
+    return jsonify(tshirts_dict)
 
 
 
-@app.route("/get_related_tshirts/<string:tshirtId>", methods=["GET", "POST"])
-def get_related_tshirts_route(tshirtId):
-    target_tshirt_id = tshirtId
-    top_n = 10
-    related_tshirts = get_related_tshirts(target_tshirt_id, top_n)
 
-    # Retrieve the related T-shirts from the database using the IDs
-    with app.app_context():
-        tshirts = TShirts.query.filter(TShirts.tshirtId.in_([tshirt_id for tshirt_id, _ in related_tshirts])).all()
-
-    # Convert T-shirts to dictionary format with similarity score
-    related_tshirts_data = []
-    for tshirt, (_, score) in zip(tshirts, related_tshirts):
-        tshirt_data = tshirt.toDict()
-        tshirt_data['similarity_score'] = score
-        related_tshirts_data.append(tshirt_data)
-
-    return jsonify({"related_tshirts": related_tshirts_data}), 200
 
 @app.route('/addAllTshirt', methods=['POST'])
 def add_all_tshirt():

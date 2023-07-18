@@ -1,100 +1,85 @@
 
 from flask import make_response,Blueprint
 import uuid
-from flask_bcrypt import Bcrypt
+
 from main import app, db
-from models import *
+from models import TShirts
 from datetime import datetime
 from helper import *
-
+from MLModels.relatedTShirts import get_related_tshirts
+from MLModels.searchTshirts import search_products
 tshirt_bp = Blueprint('tshirt', __name__)
 
-# Create a new T-shirt
-@tshirt_bp.route('/createTshirt', methods=['POST'])
-# @admin_required
-def create_tshirt():
-    data = request.json
-    required_fields = ['tshirtId', 'name', 'template_image', 'tshirt_image', 'price', 'color','size','stock_quantity', 'category']
-    if not all(field in data for field in required_fields):
-        return make_response(jsonify({'error': 'Required fields are missing'}), 400)
-    tshirtId=uuid.uuid4()
-    new_tshirt = TShirts(
-        tshirtId=tshirtId,
-        name=data['name'],
-        description=data.get('description'),
-        template_image=data['template_image'],
-        tshirt_image=data['tshirt_image'],
-        price=data['price'],
-        brand=data.get('brand'),
-        color=data.get('color'),
-        size=data.get('size'),
-        gender=data.get('gender'),
-        stock_quantity=data['stock_quantity'],
-        is_featured=data.get('is_featured', False),
-        category=data['category'],
-        keywords=data.get('keywords'),
-        date=datetime.utcnow()
-    )
-    db.session.add(new_tshirt)
-    db.session.commit()
-    return make_response(jsonify({'message': 'T-shirt created successfully',"tshirtId": tshirtId}), 201)
 
 
-# Get all T-shirts
-@tshirt_bp.route('/getTshirtDetails', methods=['GET'])
-# @admin_required
+@tshirt_bp.route('/getTshirts', methods=['GET'])
 def get_all_tshirts():
-    tshirts = TShirts.query.all()
-    result = []
-    for tshirt in tshirts:
-        result.append(tshirt.toDict())
-    return make_response(jsonify(result), 200)
+    search_term = request.args.get('search', '')
+    top_results = int(request.args.get('top', 12))
+    max_price = float(request.args.get('max_price', -1))  # -1 to indicate no maximum price
+    min_price = float(request.args.get('min_price', -1))  # -1 to indicate no minimum price
+    category = request.args.get('category', None)  # None to indicate no category provided
+    # print(category)
+    search_results = search_products(search_term, top_results, max_price, min_price, category)
+    
+    results = []
+    for product in search_results:
+        results.append(
+            product.toDict()
+        )
+    # print(results)
+    return make_response(jsonify(results), 200)
+
+    
+
 
 # Get a specific T-shirt
-@tshirt_bp.route('/getTshirtDetails/<string:tshirt_id>', methods=['GET'])
+@tshirt_bp.route('/getTshirts/<string:tshirt_id>', methods=['GET'])
 def get_tshirt(tshirt_id):
     tshirt = TShirts.query.get(tshirt_id)
     if not tshirt:
         return make_response(jsonify({'error': 'T-shirt not found'}), 404)
     return make_response(jsonify(tshirt.toDict()), 200)
 
-# Update a specific T-shirt
-@tshirt_bp.route('/Updateshirt/<string:tshirt_id>', methods=['PUT'])
-# @admin_required
-def update_tshirt(tshirt_id):
-    tshirt = TShirts.query.get(tshirt_id)
-    if not tshirt:
-        return make_response(jsonify({'error': 'T-shirt not found'}), 404)
-    data = request.json
-    required_fields = ['tshirtId', 'name', 'template_image', 'tshirt_image', 'price', 'color','size','stock_quantity', 'category']
-    if not all(field in data for field in required_fields):
-        return make_response(jsonify({'error': 'Required fields are missing'}), 400)
-    
-    tshirt.name = data.get('name', tshirt.name)
-    tshirt.description = data.get('description', tshirt.description)
-    tshirt.template_image = data.get('template_image', tshirt.template_image)
-    tshirt.tshirt_image = data.get('tshirt_image', tshirt.tshirt_image)
-    tshirt.price = data.get('price', tshirt.price)
-    tshirt.brand = data.get('brand', tshirt.brand)
-    tshirt.color = data.get('color', tshirt.color)
-    tshirt.size = data.get('size', tshirt.size)
-    tshirt.gender = data.get('gender', tshirt.gender)
-    tshirt.stock_quantity = data.get('stock_quantity', tshirt.stock_quantity)
-    tshirt.is_featured = data.get('is_featured', tshirt.is_featured)
-    tshirt.category = data.get('category', tshirt.category)
-    tshirt.keywords = data.get('keywords', tshirt.keywords)
-    db.session.commit()
-    return make_response(jsonify({'message': 'T-shirt updated successfully',"updatedTshirt":tshirt.toDict()}), 200)
+
+@tshirt_bp.route("/get_related_tshirts/<string:tshirtId>", methods=["GET", "POST"])
+def get_related_tshirts_route(tshirtId):
+    target_tshirt_id = tshirtId
+    top_n = 10
+    related_tshirts = get_related_tshirts(target_tshirt_id, top_n)
+
+    # Retrieve the related T-shirts from the database using the IDs
+    with app.app_context():
+        tshirts = TShirts.query.filter(TShirts.tshirtId.in_([tshirt_id for tshirt_id, _ in related_tshirts])).all()
+
+    # Convert T-shirts to dictionary format with similarity score
+    related_tshirts_data = []
+    for tshirt, (_, score) in zip(tshirts, related_tshirts):
+        tshirt_data = tshirt.toDict()
+        tshirt_data['similarity_score'] = score
+        related_tshirts_data.append(tshirt_data)
+
+    total_results = len(related_tshirts_data)
+
+    return jsonify({"related_tshirts": related_tshirts_data, "total_results": total_results}), 200
 
 
-# Delete a specific T-shirt
-@tshirt_bp.route('/deleteTshirts/<string:tshirt_id>', methods=['DELETE'])
-# @admin_required
-def delete_tshirt(tshirt_id):
-    tshirt = TShirts.query.get(tshirt_id)
-    if not tshirt:
-        return make_response(jsonify({'error': 'T-shirt not found'}), 404)
-    db.session.delete(tshirt)
-    db.session.commit()
-    return make_response(jsonify({'message': 'T-shirt deleted successfully'}), 204)
 
+# @tshirt_bp.route("/get_related_tshirts/<string:tshirtId>", methods=["GET", "POST"])
+# def get_related_tshirts_route(tshirtId):
+#     target_tshirt_id = tshirtId
+#     top_n = 10
+#     related_tshirts = get_related_tshirts(target_tshirt_id, top_n)
+
+#     # Retrieve the related T-shirts from the database using the IDs
+#     with app.app_context():
+#         tshirts = TShirts.query.filter(TShirts.tshirtId.in_([tshirt_id for tshirt_id, _ in related_tshirts])).all()
+
+#     # Convert T-shirts to dictionary format with similarity score
+#     related_tshirts_data = []
+#     for tshirt, (_, score) in zip(tshirts, related_tshirts):
+#         tshirt_data = tshirt.toDict()
+#         tshirt_data['similarity_score'] = score
+#         related_tshirts_data.append(tshirt_data)
+
+#     return jsonify({"related_tshirts": related_tshirts_data}), 200

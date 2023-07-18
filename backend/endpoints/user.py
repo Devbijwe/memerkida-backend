@@ -12,6 +12,6 @@ user_bp = Blueprint('user', __name__)
 @user_bp.route("/getUserDetails",methods=["GET"])
 @login_required
 def getUserDetails():
-    user = checkUser()
+    user = request.user
     user = Users.query.get(user.userId).toDictExceptPassword()
     return  jsonify({"message": "success","user":user}), 200

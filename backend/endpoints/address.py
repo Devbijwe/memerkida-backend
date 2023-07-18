@@ -17,7 +17,7 @@ address_bp = Blueprint('address', __name__)
 @address_bp.route("/getUserAddresses",methods=["GET"])
 @login_required
 def getUserAddresses():
-    user = checkUser()
+    user = request.user
     addrArr=[]
     addresses = Addresses.query.filter_by(userId=user.userId).all()
     if addresses:
@@ -30,7 +30,7 @@ def getUserAddresses():
 @address_bp.route("/createUserAddress",methods=["POST"])
 @login_required
 def createUserAddress():
-    user = checkUser()
+    user = request.user
     data = request.get_json()
     required_fields = ['address1', 'city','state','zipcode']
     if not all(field in data for field in required_fields):
@@ -62,7 +62,7 @@ def createUserAddress():
 @address_bp.route("/updateUserAddress/<string:addressId>",methods=["PUT"])
 @login_required
 def updateUserAddress(addressId):
-    user = checkUser()
+    user = request.user
     data = request.get_json()
     required_fields = ['address1', 'city','state','zipcode']
     if not all(field in data for field in required_fields):
@@ -95,8 +95,7 @@ def updateUserAddress(addressId):
 @address_bp.route("/deleteUserAddress/<string:addressId>",methods=["DELETE"])
 @login_required
 def deleteUserAddress(addressId):
-    user = checkUser()
-    
+    user = request.user
     address=Addresses.query.filter_by(userId=user.userId,addressId=addressId).first()
     if address is None:
         return jsonify({"error": "Address does not exists"}), 404
